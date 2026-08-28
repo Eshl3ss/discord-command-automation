@@ -1,0 +1,1 @@
+{"name":"discord-command-automation","version":"1.0.0","description":"A narrowly scoped Discord.js bot that runs two configured commands after an authorized trigger.","main":"src/index.js","type":"module","scripts":{"start":"node src/index.js","test":"node --test"},"engines":{"node":">=20.0.0"},"dependencies":{"discord.js":"^14.21.0","dotenv":"^16.6.1"},"license":"MIT"}
