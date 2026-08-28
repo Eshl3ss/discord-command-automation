@@ -18,6 +18,20 @@ The default trigger is `,with all`. A match sends `ACTION_ONE` (default `,rob ui
 - A Discord application with an official bot user
 - Permission to add that bot to the target server
 
+## Bot-only credential safeguards
+
+The program does not rely on a token-shaped regular expression. Token formats can change, and appearance alone does not prove which type of account owns a credential. Instead, startup uses Discord's supported authentication behavior:
+
+1. OAuth2 credentials beginning with `Bearer` are rejected locally.
+2. Before creating a Gateway client, the credential is sent to Discord's **Get Current User** endpoint using an explicit `Authorization: Bot ...` header.
+3. Discord must accept that Bot authentication and return an identity containing both an ID and `bot: true`.
+4. The connected Gateway identity is checked again when the client becomes ready. A non-bot identity is immediately disconnected and the process fails.
+5. Messages remain disabled until that ready-time bot check succeeds.
+
+Consequently, a personal token, OAuth2 user credential, random API key, or malformed value cannot be used to run this program as a personal account. Invalid credentials stop startup before a Gateway client is created. Errors never intentionally include the supplied credential.
+
+See Discord's documentation for [Bot versus OAuth2 authentication](https://docs.discord.com/developers/platform/oauth2-and-permissions) and the [`bot` field on user identities](https://docs.discord.com/developers/resources/user).
+
 ## Discord setup
 
 1. Open the [Discord Developer Portal](https://discord.com/developers/applications) and create an application.
@@ -43,7 +57,7 @@ Edit `.env` with the bot token and IDs. To copy an ID, enable **Developer Mode**
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `DISCORD_TOKEN` | Yes | — | Official bot token from the Developer Portal |
+| `DISCORD_TOKEN` | Yes | — | Official bot token from the Developer Portal; verified before Gateway login |
 | `SERVER_ID` | Yes | — | Only accepted Discord server |
 | `CHANNEL_ID` | Yes | — | Only accepted channel |
 | `AUTHORIZED_USER_ID` | Yes | — | Only user allowed to trigger actions |
@@ -61,7 +75,27 @@ npm start
 npm test
 ```
 
-Startup logs show the bot tag and configured scope. Configuration, login, client, and send failures are logged without intentionally printing the token. The offline tests cover normalization, configuration validation, bot/user/server/channel filtering, action order, and delay behavior.
+Startup first reports bot-token verification, then shows the bot tag and configured scope. Configuration, verification, login, client, and send failures are logged without intentionally printing the token. The offline tests cover normalization, configuration validation, bot/user/server/channel filtering, action order, delay behavior, and both layers of bot-identity enforcement.
+
+## Safe case-study lab
+
+The test suite demonstrates the credential boundary without using a real account or contacting Discord. It injects fake HTTP responses and a fake Gateway client to simulate:
+
+- successful official Bot authentication;
+- rejected OAuth2 Bearer credentials;
+- rejected personal-token/API-key placeholders;
+- a successful response containing `bot: false`;
+- a simulated personal identity reaching the ready event; and
+- prevention of Gateway-client creation after failed preflight.
+
+Every credential in the tests is an inert placeholder. Run the lab with `npm test`; never substitute a real personal token.
+
+| Credential presented | Expected result |
+| --- | --- |
+| Official bot token accepted by Discord with `bot: true` | Gateway login may proceed |
+| OAuth2 value prefixed with `Bearer` | Rejected locally; no network or Gateway client |
+| Personal token, unrelated API key, or invalid value | Discord Bot authentication fails; no Gateway client |
+| Any identity reporting `bot: false` | Rejected and disconnected |
 
 ## Project structure
 
@@ -71,7 +105,9 @@ src/
   config.js          Loads and validates environment variables
   messageHandler.js  Filters messages and sends the actions
   normalizer.js      Normalizes case and whitespace
-test/                 Offline unit tests
+  runtime.js         Enforces the ready-time bot identity boundary
+  tokenValidator.js  Performs Bot-authentication preflight
+test/                 Offline unit tests and fake-client security lab
 .env.example         Safe configuration template
 ```
 
@@ -86,6 +122,8 @@ test/                 Offline unit tests
 ## Security
 
 - Keep `.env` out of Git and rotate any exposed token.
+- Use only a bot token copied from the application's **Bot** page.
+- Do not weaken or remove the preflight and ready-time identity checks.
 - Grant only required permissions.
 - Keep Node.js and dependencies updated.
 
